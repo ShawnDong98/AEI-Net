@@ -53,12 +53,13 @@ class Data_Loader():
         self.dataset = DataSet(img_path, self.trans_Xs)
 
     def loader(self):
-        sampler = DistributedSampler(self.dataset)
+        #sampler = DistributedSampler(self.dataset)
         loader = torch.utils.data.DataLoader(
             self.dataset,
             batch_size=self.batch_size,
             drop_last=True,
-            sampler=sampler
+            shuffle=True
+            #sampler=sampler
         )
         
         return loader

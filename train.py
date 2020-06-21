@@ -36,20 +36,20 @@ class trainer():
 
     def net_init(self):
         try:
-            self.E = nn.parallel.DistributedDataParallel(U_Net().cuda(self.config.local_rank), device_ids=[self.config.local_rank], output_device=self.config.local_rank)
+            self.E = nn.DataParallel(U_Net().cuda())
             self.E.load_state_dict(torch.load("./saved_models/latest_E.pth"))
-            self.G = nn.parallel.DistributedDataParallel(AADGenerator(c_id=512).cuda(self.config.local_rank), device_ids=[self.config.local_rank], output_device=self.config.local_rank)
+            self.G = nn.DataParallel(AADGenerator(c_id=512).cuda())
             self.G.load_state_dict(torch.load("./saved_models/latest_G.pth"))
-            self.D = nn.parallel.DistributedDataParallel(MultiscaleDiscriminator(input_nc=3, n_layers=6).cuda(self.config.local_rank), device_ids=[self.config.local_rank], output_device=self.config.local_rank)
+            self.D = nn.DataParallel(MultiscaleDiscriminator(input_nc=3, n_layers=6).cuda())
             self.D.load_state_dict(torch.load("./saved_models/latest_D.pth"))
             self.state = torch.load("./saved_models/state.pth")
 
             print("model loaded...")
         except:
             print("No pre-trained model...")
-            self.E = nn.parallel.DistributedDataParallel(U_Net().cuda(self.config.local_rank), device_ids=[self.config.local_rank], output_device=self.config.local_rank)
-            self.G = nn.parallel.DistributedDataParallel(AADGenerator(c_id=512).cuda(self.config.local_rank), device_ids=[self.config.local_rank], output_device=self.config.local_rank)
-            self.D = nn.parallel.DistributedDataParallel(MultiscaleDiscriminator(input_nc=3, n_layers=6).cuda(self.config.local_rank), device_ids=[self.config.local_rank], output_device=self.config.local_rank)
+            self.E = nn.DataParallel(U_Net().cuda())
+            self.G = nn.DataParallel(AADGenerator(c_id=512).cuda())
+            self.D = nn.DataParallel(MultiscaleDiscriminator(input_nc=3, n_layers=6).cuda())
             self.state = {
                 "iter": 0,
                 "id_loss": [],
@@ -59,10 +59,10 @@ class trainer():
                 "d_loss": []
             }
 
-        self.arcface = Backbone(50, 0.6, 'ir_se').cuda(self.config.local_rank)
+        self.arcface = Backbone(50, 0.6, 'ir_se').cuda()
         self.arcface.eval()
         self.arcface.load_state_dict(torch.load("./face_modules/model_ir_se50.pth"))
-        self.arcface = nn.parallel.DistributedDataParallel(self.arcface, device_ids=[self.config.local_rank], output_device=self.config.local_rank)
+        self.arcface = nn.DataParallel(self.arcface)
         print("Arcface loaded...")
 
     def train(self):
@@ -75,15 +75,15 @@ class trainer():
         for step in range(self.state["iter"], self.config.total_iter):
             try:
                 Xs, Xt, same_person = next(loader)
-                Xs = Xs.cuda(self.config.local_rank, non_blocking=True)
-                Xt = Xt.cuda(self.config.local_rank, non_blocking=True)
-                same_person = same_person.cuda(self.config.local_rank, non_blocking=True)
+                Xs = Xs.cuda()
+                Xt = Xt.cuda()
+                same_person = same_person.cuda()
             except:
                 loader = iter(self.dataloader)
                 Xs, Xt, same_person = next(loader)
-                Xs = Xs.cuda(self.config.local_rank, non_blocking=True)
-                Xt = Xt.cuda(self.config.local_rank, non_blocking=True)
-                same_person = same_person.cuda(self.config.local_rank, non_blocking=True)
+                Xs = Xs.cuda()
+                Xt = Xt.cuda()
+                same_person = same_person.cuda()
             
             start_time = time.time()
 
@@ -165,8 +165,8 @@ def get_config():
     return parser.parse_args()
 
 if __name__ == "__main__":
-    torch.distributed.init_process_group(backend='nccl')
+    #torch.distributed.init_process_group(backend='nccl')
     config = get_config()
-    torch.cuda.set_device(config.local_rank)
+    #torch.cuda.set_device(config.local_rank)
     trainer = trainer(config)
     trainer.train()
