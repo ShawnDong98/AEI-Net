@@ -2,7 +2,7 @@ import sys
 import os
 path = os.path.abspath(os.path.dirname(__file__))
 sys.path.append(path)
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0, 2, 3, 4'
 
 import torch
 import torch.nn as nn
@@ -22,12 +22,18 @@ from utils.plot import *
 from utils.util import *
 
 
-
-class trainer():
+class trainer_DDP():
     def __init__(self, config):
         super().__init__()
         self.config = config
-        self.dataloader = Data_Loader(config.img_size, config.image_path, config.batch_size, same_prob=0.2).loader()
+        self.dataloader = Data_Loader_DDP(config.img_size, config.image_path, config.batch_size, same_prob=0.2).loader()
+        self.transform = transforms.Compose(
+            [
+                transforms.Resize((self.config.img_size, self.config.img_size)),
+                transforms.ToTensor(),
+                transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+            ]
+        )
 
         self.net_init()
 
@@ -37,20 +43,21 @@ class trainer():
 
     def net_init(self):
         try:
-            self.E = U_Net().cuda()
-            self.E.load_state_dict(torch.load("./saved_models/latest_E.pth", map_location=torch.device('cpu')))
-            self.G = AADGenerator(c_id=512).cuda()
-            self.G.load_state_dict(torch.load("./saved_models/latest_G.pth", map_location=torch.device('cpu')))
-            self.D = MultiscaleDiscriminator(input_nc=3, n_layers=6).cuda()
-            self.D.load_state_dict(torch.load("./saved_models/latest_D.pth", map_location=torch.device('cpu')))
-            self.state = torch.load("./saved_models/state.pth",  map_location=torch.device('cpu'))
+            self.E = nn.parallel.DistributedDataParallel(U_Net().cuda(self.config.local_rank), device_ids=[self.config.local_rank], broadcast_buffers=False)
+            self.E.module.load_state_dict(torch.load("./saved_models/latest_E_DDP.pth", map_location=torch.device('cpu')))
+            self.G = nn.parallel.DistributedDataParallel(AADGenerator(c_id=512).cuda(self.config.local_rank), device_ids=[self.config.local_rank])
+            self.G.module.load_state_dict(torch.load("./saved_models/latest_G_DDP.pth", map_location=torch.device('cpu')))
+            self.D = nn.parallel.DistributedDataParallel(MultiscaleDiscriminator(input_nc=3, n_layers=6).cuda(self.config.local_rank), device_ids=[self.config.local_rank])
+            self.D.module.load_state_dict(torch.load("./saved_models/latest_D_DDP.pth", map_location=torch.device('cpu')))
+            self.state = torch.load("./saved_models/state_DDP.pth",  map_location=torch.device('cpu'))
 
             print("model loaded...")
+            
         except:
             print("No pre-trained model...")
-            self.E = U_Net().cuda()
-            self.G = AADGenerator(c_id=512).cuda()
-            self.D = MultiscaleDiscriminator(input_nc=3, n_layers=6).cuda()
+            self.E = nn.parallel.DistributedDataParallel(U_Net().cuda(self.config.local_rank), device_ids=[self.config.local_rank], broadcast_buffers=False)
+            self.G = nn.parallel.DistributedDataParallel(AADGenerator(c_id=512).cuda(self.config.local_rank), device_ids=[self.config.local_rank])
+            self.D = nn.parallel.DistributedDataParallel(MultiscaleDiscriminator(input_nc=3, n_layers=6).cuda(self.config.local_rank), device_ids=[self.config.local_rank])
             self.state = {
                 "iter": 0,
                 "id_loss": [],
@@ -63,7 +70,7 @@ class trainer():
         self.arcface = Backbone(50, 0.6, 'ir_se')
         self.arcface.eval()
         self.arcface.load_state_dict(torch.load("./face_modules/model_ir_se50.pth", map_location=torch.device('cpu')))
-        self.arcface = self.arcface.cuda()
+        self.arcface = nn.parallel.DistributedDataParallel(self.arcface.cuda(self.config.local_rank), device_ids=[self.config.local_rank])
         print("Arcface loaded...")
 
     def train(self):
@@ -76,15 +83,15 @@ class trainer():
         for step in range(self.state["iter"], self.config.total_iter):
             try:
                 Xs, Xt, same_person = next(loader)
-                Xs = Xs.cuda()
-                Xt = Xt.cuda()
-                same_person = same_person.cuda()
+                Xs = Xs.cuda(self.config.local_rank, non_blocking=True)
+                Xt = Xt.cuda(self.config.local_rank, non_blocking=True)
+                same_person = same_person.cuda(self.config.local_rank, non_blocking=True)
             except:
                 loader = iter(self.dataloader)
                 Xs, Xt, same_person = next(loader)
-                Xs = Xs.cuda()
-                Xt = Xt.cuda()
-                same_person = same_person.cuda()
+                Xs = Xs.cuda(self.config.local_rank, non_blocking=True)
+                Xt = Xt.cuda(self.config.local_rank, non_blocking=True)
+                same_person = same_person.cuda(self.config.local_rank, non_blocking=True)
             
             start_time = time.time()
 
@@ -146,25 +153,29 @@ class trainer():
             lossD.backward()
             self.optimizer_D.step()
 
-            if (step + 1) % 1 == 0:
+            if (step + 1) % 1 == 0 :
                 batch_time = time.time() - start_time
                 print("time: {:.4f}s,  G_loss: {:.4f},  D_loss: {:.4f}, D_real: {:.4f}"
                       .format(batch_time, g_loss, lossD, loss_true))
                 print("step [{}/{}], rec_loss: {:.4f},  id_loss: {:.4f}, att_loss: {:.4f},"
                       .format(step + 1, self.config.total_iter, rec_loss,  id_loss, att_loss))
             
-            if (step + 1) % 10 == 0:
+            if (step + 1) % 10 == 0 and self.config.local_rank==0:
                 image = make_image(Xs, Xt, Y_hat)
-                image.save("./output/latest.jpg")
-                
+                image.save("./output/latest_DDP.jpg")
 
-            if (step+1) % 100 == 0:
-                torch.save(self.E.state_dict(), './saved_models/latest_E.pth')
-                torch.save(self.G.state_dict(), './saved_models/latest_G.pth')
-                torch.save(self.D.state_dict(), './saved_models/latest_D.pth')
+            if (step+1) % 100 == 0 and self.config.local_rank==0:
+                torch.save(self.E.module.state_dict(), './saved_models/latest_E_DDP.pth')
+                torch.save(self.G.module.state_dict(), './saved_models/latest_G_DDP.pth')
+                torch.save(self.D.module.state_dict(), './saved_models/latest_D_DDP.pth')
                 self.state['iter'] = step + 1
-                torch.save(self.state, './saved_models/state.pth')
-                draw_losses()
+                torch.save(self.state, './saved_models/state_DDP.pth')
+                draw_losses_DDP()
+
+
+
+
+
 
 
 def get_config():
@@ -174,11 +185,17 @@ def get_config():
     parser.add_argument('--total_iter', type=int, default=5000000)
 
     parser.add_argument('--image_path', type=str, default='./data/train/')
+    parser.add_argument('--DDP', action='store_true', )
+    parser.add_argument('--local_rank', default=-1, type=int,
+                    help='node rank for distributed training')
 
     return parser.parse_args()
 
 if __name__ == "__main__":
-    # Single GPU
+    # DDP
+    torch.distributed.init_process_group(backend='nccl')
     config = get_config()
-    trainer = trainer(config)
-    trainer.train()
+    torch.cuda.set_device(config.local_rank)
+    torch.autograd.set_detect_anomaly(True)
+    trainer = trainer_DDP(config)
+    trainer.inference()

@@ -124,7 +124,6 @@ class Backbone(Module):
                                        Flatten(),
                                        Linear(512 * 7 * 7, 512),
                                        BatchNorm1d(512))
-                                       # )
         modules = []
         for block in blocks:
             for bottleneck in block:

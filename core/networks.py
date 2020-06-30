@@ -67,18 +67,19 @@ class AADGenerator(nn.Module):
         self.AADBlk8 = AADResBlk(64, 3, c_id, 64)
 
     def forward(self, z_id, z_att):
-        out = self.upsample(z_id.view(z_id.size(0), -1, 1, 1))
-        out = F.interpolate(self.AADBlk1(out, z_id, z_att[0]), scale_factor=2, mode='bilinear', align_corners=True)
-        out = F.interpolate(self.AADBlk2(out, z_id, z_att[1]), scale_factor=2, mode='bilinear', align_corners=True)    
-        out = F.interpolate(self.AADBlk3(out, z_id, z_att[2]), scale_factor=2, mode='bilinear', align_corners=True)
-        out = F.interpolate(self.AADBlk4(out, z_id, z_att[3]), scale_factor=2, mode='bilinear', align_corners=True)
-        out = F.interpolate(self.AADBlk5(out, z_id, z_att[4]), scale_factor=2, mode='bilinear', align_corners=True)
-        out = F.interpolate(self.AADBlk6(out, z_id, z_att[5]), scale_factor=2, mode='bilinear', align_corners=True)
-        out = F.interpolate(self.AADBlk7(out, z_id, z_att[6]), scale_factor=2, mode='bilinear', align_corners=True)
+        m = self.upsample(z_id.view(z_id.size(0), -1, 1, 1))
+        m2 = F.interpolate(self.AADBlk1(m, z_id, z_att[0]), scale_factor=2, mode='bilinear', align_corners=True)
+        m3 = F.interpolate(self.AADBlk2(m2, z_id, z_att[1]), scale_factor=2, mode='bilinear', align_corners=True)    
+        m4 = F.interpolate(self.AADBlk3(m3, z_id, z_att[2]), scale_factor=2, mode='bilinear', align_corners=True)
+        m5 = F.interpolate(self.AADBlk4(m4, z_id, z_att[3]), scale_factor=2, mode='bilinear', align_corners=True)
+        m6 = F.interpolate(self.AADBlk5(m5, z_id, z_att[4]), scale_factor=2, mode='bilinear', align_corners=True)
+        m7 = F.interpolate(self.AADBlk6(m6, z_id, z_att[5]), scale_factor=2, mode='bilinear', align_corners=True)
+        m8 = F.interpolate(self.AADBlk7(m7, z_id, z_att[6]), scale_factor=2, mode='bilinear', align_corners=True)
 
-        y = self.AADBlk8(out, z_id, z_att[7])
+        y = self.AADBlk8(m8, z_id, z_att[7])
 
-        return torch.tan(y)
+        return torch.tanh(y)
+
 
 
 
@@ -97,22 +98,22 @@ class NLayerDiscriminator(nn.Module):
         for n in range(1, n_layers):
             nf_prev = nf
             nf = min(nf * 2, 512)
-            sequence += [[
+            sequence = sequence + [[
                 SN(nn.Conv2d(nf_prev, nf, kernel_size=kw, stride=2, padding=padw)),
                 nn.LeakyReLU(0.2, True)
             ]]
 
         nf_prev = nf
         nf = min(nf * 2, 512)
-        sequence += [[
+        sequence = sequence + [[
             SN(nn.Conv2d(nf_prev, nf, kernel_size=kw, stride=1, padding=padw)),
             nn.LeakyReLU(0.2, True)
         ]]
 
-        sequence += [[nn.Conv2d(nf, 1, kernel_size=kw, stride=1, padding=padw)]]
+        sequence = sequence + [[nn.Conv2d(nf, 1, kernel_size=kw, stride=1, padding=padw)]]
 
         if use_sigmoid:
-            sequence += [[nn.Sigmoid()]]
+            sequence = sequence + [[nn.Sigmoid()]]
 
         if getIntermFeat:
             for n in range(len(sequence)):
@@ -120,7 +121,7 @@ class NLayerDiscriminator(nn.Module):
         else:
             sequence_stream = []
             for n in range(len(sequence)):
-                sequence_stream += sequence[n]
+                sequence_stream = sequence_stream + sequence[n]
             self.model = nn.Sequential(*sequence_stream)
 
     def forward(self, input):

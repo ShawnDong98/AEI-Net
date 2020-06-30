@@ -43,7 +43,5 @@ def make_image(Xs, Xt, Y):
 
 
 
-
-
 if __name__ == "__main__":
-    draw_lines_1()
+    pass

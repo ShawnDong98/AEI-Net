@@ -6,11 +6,12 @@ sys.path.append(path)
 import torch
 import torch.nn as nn
 
+
 def Conv4x4(c_in, c_out):
     return nn.Sequential(
         nn.Conv2d(c_in, c_out, kernel_size=4, stride=2, padding=1),
         nn.BatchNorm2d(c_out),
-        nn.LeakyReLU(0.1, inplace=True)
+        nn.LeakyReLU(0.1)
     )
 
 class DeConv4x4(nn.Module):
@@ -18,15 +19,15 @@ class DeConv4x4(nn.Module):
         super().__init__()
         self.deconv = nn.ConvTranspose2d(c_in, c_out, kernel_size=4, stride=2, padding=1)
         self.BN = nn.BatchNorm2d(c_out)
-        self.LReLU = nn.LeakyReLU(0.1, inplace=True)
+        self.LReLU = nn.LeakyReLU(0.1)
 
     def forward(self, input, skip):
         x = self.deconv(input)
         x = self.BN(x)
         x = self.LReLU(x)
 
-        h = skip
-        out = torch.cat((x, h), dim=1)
+        #h = skip
+        out = torch.cat((x, skip), dim=1)
         return out
 
 
@@ -62,7 +63,7 @@ class AADLayer(nn.Module):
 
         M = torch.sigmoid(self.conv_h(h_bar))
 
-        h_out = (1 - M) * A + M * I
+        h_out = (torch.ones_like(M).to(M.device) - M) * A + M * I
 
         return h_out
 
@@ -105,6 +106,8 @@ class AADResBlk(nn.Module):
         out = x + h
 
         return out
+
+
 
 
 
