@@ -32,13 +32,11 @@ num_gpu为GPU数
 
 path1和path2为交换人脸的路径， 也可以直接在inference.py中直接修改default
 
-<<<<<<< HEAD
+
 # Pretrained Model
 
 链接: https://pan.baidu.com/s/1oWYwt1lpJg5FmiIoUXAMdg 提取码: x69v 
 
-=======
->>>>>>> 026392020c9894000ec913a55e9261cd7a5cb919
 # Tips
 
 所有训练和测试的图片都需要使用face_modules下的preprocess_images.py进行预处理
